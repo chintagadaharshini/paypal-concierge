@@ -1,16 +1,34 @@
 // Server-side checkout state for the Concierge. Prices are decided here, never by the browser or
 // the AI: a client only names an item, and the server looks its price up.
 //
-// Step 1 sells one fixed test item. Later steps add items the agent found on Channel3, with the
+// Steps 1-2 sell fixed test items. Later steps add items the agent found on Channel3, with the
 // price the server read from Channel3, before an order can be created for them.
 
 import type { OrderItem } from './paypal';
 
-const TEST_ITEMS: Record<string, OrderItem> = {
-  'test-cricket-ball': { sku: 'test-cricket-ball', name: 'Leather cricket ball (test item)', price: '24.99', currency: 'USD' },
+export type CatalogItem = OrderItem & { category: string };
+
+const TEST_ITEMS: Record<string, CatalogItem> = {
+  'test-cricket-ball': {
+    sku: 'test-cricket-ball',
+    name: 'Leather cricket ball (test item)',
+    price: '24.99',
+    currency: 'USD',
+    category: 'sports',
+  },
+  // Priced over the default spend limit (lib/config.ts), to demo a blocked payment.
+  'test-cricket-bat': {
+    sku: 'test-cricket-bat',
+    name: 'English willow cricket bat (test item)',
+    price: '89.00',
+    currency: 'USD',
+    category: 'sports',
+  },
 };
 
-export function findItem(sku: string): OrderItem | undefined {
+export const TEST_SKUS = Object.keys(TEST_ITEMS);
+
+export function findItem(sku: string): CatalogItem | undefined {
   return Object.hasOwn(TEST_ITEMS, sku) ? TEST_ITEMS[sku] : undefined;
 }
 
