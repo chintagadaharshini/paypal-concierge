@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { RuleResult } from '@/lib/rules';
+import type { RuleCheck, RuleResult } from '@/lib/rules';
 import { RuleResults } from './rule-results';
 
 // PayPal JS SDK v6, sandbox. The browser only names the item (sku); the server creates the order at
@@ -40,7 +40,8 @@ type Status =
   | { kind: 'paying' }
   | { kind: 'paid'; captureId: string; amount: string }
   | { kind: 'cancelled' }
-  | { kind: 'blocked'; message: string }
+  // The server refused at order creation (a fallback: the preview should have caught it first).
+  | { kind: 'blocked'; rules: RuleResult[] }
   | { kind: 'error'; message: string };
 
 // Thrown when the server's spending rules refuse the purchase; no PayPal order exists.
@@ -85,11 +86,14 @@ async function createOrder(sku: string, confirmed: boolean): Promise<{ orderId: 
 // Once blocked, the block stays on screen: PayPal may report its own error as its window closes.
 const unlessBlocked = (next: Status) => (prev: Status) => (prev.kind === 'blocked' ? prev : next);
 
+// The rules preview for one tick state of the confirmation box. Read-only: it creates nothing.
+type Preview = { confirmed: boolean } & ({ check: RuleCheck } | { error: string });
+
 export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: string; sku: string; amount: string; currency: string }) {
   const [status, setStatus] = useState<Status>({ kind: 'loading' });
   const [session, setSession] = useState<OneTimeSession | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [rules, setRules] = useState<RuleResult[] | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,31 +131,50 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
     };
   }, [clientId, currency, amount]);
 
-  async function pay() {
+  // Check the rules before any click, and again whenever the confirmation box changes, so the
+  // PayPal button only exists for a purchase the rules allow.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchPreview(sku, confirmed, controller.signal)
+      .then((check) => setPreview({ confirmed, check }))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPreview({ confirmed, error: error instanceof Error ? error.message : 'Could not check your rules.' });
+        }
+      });
+    return () => controller.abort();
+  }, [sku, confirmed]);
+
+  function pay() {
     if (!session) return;
     setStatus({ kind: 'paying' });
-    setRules(null);
-    // The server checks the rules when it creates the order; show the result either way.
+    // The server re-checks every rule when it creates the order; it's the source of truth.
     const order = createOrder(sku, confirmed).then(
-      (created) => {
-        setRules(created.rules);
-        return { orderId: created.orderId };
-      },
+      (created) => ({ orderId: created.orderId }),
       (error: unknown) => {
-        if (error instanceof BlockedError) {
-          setRules(error.rules);
-          setStatus({ kind: 'blocked', message: error.message });
-        }
+        if (error instanceof BlockedError) setStatus({ kind: 'blocked', rules: error.rules });
         throw error;
       },
     );
-    try {
-      // v6 wants the order as a Promise, not a function that returns one.
-      await session.start({ presentationMode: 'auto' }, order);
-    } catch (error) {
+    // Started straight from the click, with nothing awaited first, so popup blockers don't stop the
+    // PayPal window. v6 wants the order as a Promise, not a function that returns one.
+    session.start({ presentationMode: 'auto' }, order).catch((error: unknown) => {
       setStatus(unlessBlocked({ kind: 'error', message: error instanceof Error ? error.message : 'Checkout failed.' }));
-    }
+    });
   }
+
+  function onConfirmChange(checked: boolean) {
+    setConfirmed(checked);
+    // A server block was for the old answer; the new preview decides again.
+    setStatus((prev) => (prev.kind === 'blocked' ? { kind: 'ready' } : prev));
+  }
+
+  // Only a preview for the box's current state counts; an older one may still be in state.
+  const current = preview?.confirmed === confirmed ? preview : null;
+  const check = current && 'check' in current ? current.check : null;
+  const results = status.kind === 'blocked' ? status.rules : check?.results;
+  const allowed = status.kind !== 'blocked' && check?.allowed === true;
+  const busy = status.kind === 'paying';
 
   if (status.kind === 'paid') {
     return (
@@ -160,43 +183,59 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
           <p className="font-semibold">Payment captured: {status.amount}</p>
           <p className="mt-1 font-mono text-xs">Capture ID {status.captureId}</p>
         </div>
-        {rules && <RuleResults results={rules} />}
+        {results && <RuleResults results={results} />}
       </div>
     );
   }
 
-  const canPay = status.kind !== 'loading' && status.kind !== 'paying';
   return (
     <div>
-      {status.kind === 'loading' && <p className="text-sm text-pp-muted">Loading PayPal…</p>}
-      {session && (
-        <label className="mb-4 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={!canPay} />
-          I confirm I want to buy this for {amount} {currency}
-        </label>
-      )}
-      {session && (
-        <paypal-button
-          type="pay"
-          className="paypal-gold"
-          onClick={canPay ? pay : undefined}
-          aria-disabled={!canPay}
-          style={{ display: 'block', maxWidth: 350, opacity: canPay ? 1 : 0.6 }}
-        />
-      )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={confirmed} onChange={(e) => onConfirmChange(e.target.checked)} disabled={busy} />
+        I confirm I want to buy this for {amount} {currency}
+      </label>
+
+      <div className="mt-4">
+        {results ? (
+          <RuleResults results={results} />
+        ) : current && 'error' in current ? (
+          <p className="text-sm text-red-700">{current.error}</p>
+        ) : (
+          <p className="text-sm text-pp-muted">Checking your rules…</p>
+        )}
+      </div>
+
+      <div className="mt-4">
+        {results && !allowed ? (
+          // No PayPal button at all: nothing to click, so no PayPal window can open.
+          <p role="alert" className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-800">
+            Blocked, no payment possible.
+            {status.kind === 'blocked' && ' The server refused it, and no PayPal order was created.'}
+          </p>
+        ) : allowed && session ? (
+          <paypal-button
+            type="pay"
+            className="paypal-gold"
+            onClick={busy ? undefined : pay}
+            aria-disabled={busy}
+            style={{ display: 'block', maxWidth: 350, opacity: busy ? 0.6 : 1 }}
+          />
+        ) : allowed && status.kind === 'loading' ? (
+          <p className="text-sm text-pp-muted">Loading PayPal…</p>
+        ) : null}
+      </div>
+
       {status.kind === 'paying' && <p className="mt-3 text-sm text-pp-muted">Waiting for PayPal…</p>}
       {status.kind === 'cancelled' && <p className="mt-3 text-sm text-pp-muted">Payment cancelled. You can try again.</p>}
       {status.kind === 'error' && <p className="mt-3 text-sm text-red-700">{status.message}</p>}
-      {status.kind === 'blocked' && (
-        <p role="alert" className="mt-3 rounded-md bg-red-50 p-3 text-sm font-semibold text-red-800">
-          Payment blocked. No PayPal order was created.
-        </p>
-      )}
-      {rules && status.kind !== 'paying' && (
-        <div className="mt-4">
-          <RuleResults results={rules} />
-        </div>
-      )}
     </div>
   );
+}
+
+async function fetchPreview(sku: string, confirmed: boolean, signal: AbortSignal): Promise<RuleCheck> {
+  const params = new URLSearchParams({ sku, confirmed: String(confirmed) });
+  const res = await fetch(`/api/rules/check?${params}`, { signal, cache: 'no-store' });
+  const data = (await res.json()) as Partial<RuleCheck> & { error?: string };
+  if (!res.ok || !data.results) throw new Error(data.error ?? 'Could not check your rules.');
+  return { allowed: data.allowed === true, results: data.results };
 }
