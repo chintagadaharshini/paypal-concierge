@@ -1,6 +1,7 @@
 // PayPal REST client: every call this demo makes to PayPal goes through here. It covers
-// catalog products, billing plans, invoicing, Transaction Search and balances, with plain
-// fetch and no SDK. Server-side only: it reads the client secret from the environment.
+// catalog products, billing plans, invoicing, Transaction Search, balances and (for the
+// Concierge checkout) creating and capturing orders, with plain fetch and no SDK.
+// Server-side only: it reads the client secret from the environment.
 
 const BASE_URL = 'https://api-m.sandbox.paypal.com';
 const MAX_ATTEMPTS = 4;
@@ -9,10 +10,21 @@ export class PayPalApiError extends Error {
   constructor(
     readonly status: number,
     readonly path: string,
-    body: string,
+    readonly body: string,
+    // PayPal's id for this request, needed when asking PayPal support about a failure.
+    readonly debugId?: string | null,
   ) {
-    super(`PayPal ${status} on ${path}: ${body.slice(0, 300)}`);
+    super(`PayPal ${status} on ${path}${debugId ? ` (debug_id ${debugId})` : ''}: ${body.slice(0, 300)}`);
     this.name = 'PayPalApiError';
+  }
+
+  // The first `issue` code in a PayPal error body, e.g. 'INSTRUMENT_DECLINED'.
+  get issue(): string | undefined {
+    try {
+      return (JSON.parse(this.body) as { details?: { issue?: string }[] }).details?.[0]?.issue;
+    } catch {
+      return undefined;
+    }
   }
 }
 
@@ -41,10 +53,30 @@ async function accessToken(): Promise<string> {
   return access_token;
 }
 
-async function get<T>(path: string): Promise<T> {
+function get<T>(path: string): Promise<T> {
+  return request<T>('GET', path);
+}
+
+// POSTs carry a PayPal-Request-Id, so PayPal treats a retry as the same request and never
+// creates or captures twice.
+function post<T>(path: string, body: unknown, requestId: string): Promise<T> {
+  return request<T>('POST', path, { body, requestId });
+}
+
+async function request<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  { body, requestId }: { body?: unknown; requestId?: string } = {},
+): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { Authorization: `Bearer ${await accessToken()}` },
+      method,
+      headers: {
+        Authorization: `Bearer ${await accessToken()}`,
+        ...(body !== undefined && { 'Content-Type': 'application/json' }),
+        ...(requestId && { 'PayPal-Request-Id': requestId }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
     });
     if (res.ok) return (await res.json()) as T;
@@ -58,7 +90,7 @@ async function get<T>(path: string): Promise<T> {
       await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 250));
       continue;
     }
-    throw new PayPalApiError(res.status, path, await res.text());
+    throw new PayPalApiError(res.status, path, await res.text(), res.headers.get('paypal-debug-id'));
   }
 }
 
@@ -220,4 +252,58 @@ export type Balances = {
 
 export function getBalances(): Promise<Balances> {
   return get<Balances>('/v1/reporting/balances');
+}
+
+// --- Orders (Concierge checkout) ------------------------------------------------------
+
+export type OrderStatus = 'CREATED' | 'SAVED' | 'APPROVED' | 'VOIDED' | 'COMPLETED' | 'PAYER_ACTION_REQUIRED';
+
+export type Order = {
+  id: string;
+  status: OrderStatus;
+  purchase_units?: {
+    reference_id?: string;
+    custom_id?: string;
+    amount?: Money;
+    payments?: { captures?: { id: string; status: string; amount: Money; create_time?: string }[] };
+  }[];
+  payer?: { email_address?: string; payer_id?: string };
+};
+
+export type OrderItem = { name: string; sku: string; price: string; currency: string };
+
+// The caller passes a price the server has already decided on; nothing here comes from the browser.
+// One item, no shipping: the demo sells single gifts and leaves the address out of the flow.
+export function createOrder(item: OrderItem, requestId: string): Promise<Order> {
+  const money = { currency_code: item.currency, value: item.price };
+  return post<Order>(
+    '/v2/checkout/orders',
+    {
+      intent: 'CAPTURE',
+      purchase_units: [
+        {
+          reference_id: item.sku,
+          description: item.name.slice(0, 127),
+          amount: { ...money, breakdown: { item_total: money } },
+          items: [{ name: item.name.slice(0, 127), sku: item.sku, quantity: '1', unit_amount: money, category: 'PHYSICAL_GOODS' }],
+        },
+      ],
+      payment_source: {
+        paypal: {
+          experience_context: { brand_name: 'PayPal Concierge', shipping_preference: 'NO_SHIPPING', user_action: 'PAY_NOW' },
+        },
+      },
+    },
+    requestId,
+  );
+}
+
+// Throws PayPalApiError with issue 'INSTRUMENT_DECLINED' (HTTP 422) when the buyer's funding source
+// is refused; the buyer can then pick another one and approve again.
+export function captureOrder(orderId: string, requestId: string): Promise<Order> {
+  return post<Order>(`/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {}, requestId);
+}
+
+export function getOrder(orderId: string): Promise<Order> {
+  return get<Order>(`/v2/checkout/orders/${encodeURIComponent(orderId)}`);
 }
