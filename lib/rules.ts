@@ -6,6 +6,17 @@ import type { SpendingRules } from './config';
 
 export type RuleId = 'spend-limit' | 'confirmation' | 'blocked-category';
 
+/** Short rule names, e.g. for an order's "blocked by" column. */
+export const RULE_NAMES: Record<RuleId, string> = {
+  'spend-limit': 'Spend limit',
+  confirmation: 'Confirmation',
+  'blocked-category': 'Blocked category',
+};
+
+/** The names of the rules that failed, comma-separated, or null if none did. */
+export const failedRuleNames = (results: RuleResult[]) =>
+  results.filter((r) => !r.passed).map((r) => RULE_NAMES[r.id]).join(', ') || null;
+
 export type RuleResult = {
   id: RuleId;
   label: string;

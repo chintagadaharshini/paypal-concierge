@@ -35,13 +35,13 @@ export function findItem(sku: string): CatalogItem | undefined {
 // Orders this server created and has not yet captured, with the amount it expects to capture.
 // Kept on globalThis so dev-mode hot reloads don't forget them. In memory only: a restart forgets
 // pending orders, and the buyer just starts checkout again.
-type PendingOrder = { item: OrderItem; createdAt: number };
+type PendingOrder = { item: CatalogItem; createdAt: number };
 const store = globalThis as typeof globalThis & { __pendingOrders?: Map<string, PendingOrder> };
 const pending = (store.__pendingOrders ??= new Map());
 
 const PENDING_TTL_MS = 3 * 60 * 60 * 1000; // PayPal orders expire after about 3 hours unapproved.
 
-export function rememberOrder(orderId: string, item: OrderItem) {
+export function rememberOrder(orderId: string, item: CatalogItem) {
   const now = Date.now();
   for (const [id, order] of pending) if (now - order.createdAt > PENDING_TTL_MS) pending.delete(id);
   pending.set(orderId, { item, createdAt: now });

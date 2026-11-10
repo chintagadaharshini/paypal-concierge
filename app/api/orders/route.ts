@@ -4,8 +4,9 @@
 
 import { findItem, rememberOrder } from '@/lib/checkout';
 import { DEFAULT_RULES } from '@/lib/config';
+import { addLiveOrder } from '@/lib/orders-store';
 import { createOrder, PayPalApiError } from '@/lib/paypal';
-import { checkPurchase } from '@/lib/rules';
+import { checkPurchase, failedRuleNames } from '@/lib/rules';
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { sku?: unknown; confirmed?: unknown } | null;
@@ -17,6 +18,19 @@ export async function POST(request: Request) {
   if (!check.allowed) {
     const failed = check.results.filter((r) => !r.passed).map((r) => r.label);
     console.info(`[orders] blocked ${item.sku}: ${failed.join(', ')}`);
+    addLiveOrder({
+      request: null,
+      product: item.name,
+      sku: item.sku,
+      category: item.category,
+      merchant: null,
+      amount: Number(item.price),
+      currency: item.currency,
+      status: 'BLOCKED',
+      blockedBy: failedRuleNames(check.results),
+      paypalOrderId: null,
+      captureId: null,
+    });
     return Response.json({ error: `Blocked by your spending rules: ${failed.join(', ')}`, rules: check.results }, { status: 403 });
   }
 
