@@ -174,6 +174,10 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
   const check = current && 'check' in current ? current.check : null;
   const results = status.kind === 'blocked' ? status.rules : check?.results;
   const allowed = status.kind !== 'blocked' && check?.allowed === true;
+  // Only the confirmation is missing: a step the buyer still has to take, not a block. (The server
+  // still refuses an unconfirmed order with 403.)
+  const awaitingConfirmation =
+    status.kind !== 'blocked' && !!results && results.every((r) => r.passed || r.id === 'confirmation') && !allowed;
   const busy = status.kind === 'paying';
 
   if (status.kind === 'paid') {
@@ -197,7 +201,7 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
 
       <div className="mt-4">
         {results ? (
-          <RuleResults results={results} />
+          <RuleResults results={results} pending={awaitingConfirmation ? ['confirmation'] : []} />
         ) : current && 'error' in current ? (
           <p className="text-sm text-red-700">{current.error}</p>
         ) : (
@@ -206,7 +210,9 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
       </div>
 
       <div className="mt-4">
-        {results && !allowed ? (
+        {awaitingConfirmation ? (
+          <p className="text-sm text-pp-muted">Tick the box to confirm.</p>
+        ) : results && !allowed ? (
           // No PayPal button at all: nothing to click, so no PayPal window can open.
           <p role="alert" className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-800">
             Blocked, no payment possible.
