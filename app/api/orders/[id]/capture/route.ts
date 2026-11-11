@@ -56,11 +56,11 @@ function saveLiveOrder(
   amount = { value: item.price, currency_code: item.currency },
 ) {
   addLiveOrder({
-    request: null,
+    request: item.request ?? null,
     product: item.name,
     sku: item.sku,
     category: item.category,
-    merchant: null,
+    merchant: item.merchant ?? null,
     amount: Number(amount.value),
     currency: amount.currency_code,
     status,

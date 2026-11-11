@@ -34,6 +34,18 @@ Other scripts: `npm run build` (production build), `npm run start` (serve the bu
 
 Set `CHANNEL3_API_KEY` in `.env.local` (free account at [trychannel3.com](https://trychannel3.com)). Try it at [/search-test](http://localhost:3000/search-test), or call `GET /api/products/search?q=cricket+bat&limit=5` directly. See [`lib/channel3.ts`](lib/channel3.ts).
 
+### Shopping agent (Gemini)
+
+Set `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` (free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)). Try it at [/agent-test](http://localhost:3000/agent-test). The model id is `GEMINI_MODEL` in [`lib/config.ts`](lib/config.ts).
+
+The agent ([`lib/agent.ts`](lib/agent.ts)) uses the Vercel AI SDK 4 with tools to search Channel3, propose a purchase, and read PayPal sandbox orders and transactions through [`@paypal/agent-toolkit`](https://developer.paypal.com/ai-tools/toolkit.md) (read-only actions, `sandbox: true`). It never pays and never sets a price:
+
+- `propose_purchase` takes only a product id from its own search results. The server looks the price and category up in its Channel3 cache, saves a draft, and runs the spending rules.
+- The browser pays with `POST /api/orders { draftId, confirmed }`, which checks every rule again and returns 403 if any fails.
+- Products whose title or category looks like alcohol, tobacco, weapons, gambling or gift cards are checked as that blocked category ([`lib/categories.ts`](lib/categories.ts)).
+
+To protect free keys, identical Channel3 searches are cached for 10 minutes, and `/api/agent` allows 5 runs per visitor per 10 minutes and 100 per day (`AGENT_LIMITS` in `lib/config.ts`).
+
 ### AG Studio licence (optional)
 
 Set `AG_STUDIO` in `.env.local` to your AG Studio licence key. The dashboard passes it to `AgStudioProvider`.
@@ -58,7 +70,7 @@ In production `.env.local` isn't deployed: set the variable in your host's envir
 The repo has a [`render.yaml`](render.yaml) Blueprint: one Node web service that runs `npm ci && npm run build`, then `npm start` (`next start` listens on Render's `PORT`).
 
 1. In Render, choose **New > Blueprint** and connect this repository.
-2. When asked, enter `PAYPAL_CLIENT_ID` and `PAYPAL_SECRET` from your PayPal **sandbox** REST app, and `CHANNEL3_API_KEY` from your Channel3 account. `AG_STUDIO` is optional.
+2. When asked, enter `PAYPAL_CLIENT_ID` and `PAYPAL_SECRET` from your PayPal **sandbox** REST app, `CHANNEL3_API_KEY` from your Channel3 account, and `GOOGLE_GENERATIVE_AI_API_KEY` from Google AI Studio. `AG_STUDIO` is optional.
 3. Click **Apply**. When the deploy is live, open the `.onrender.com` URL.
 
 Leave `AG_STUDIO_OPENAI_API_KEY` and `OPENAI_API_KEY` unset so the dashboard's AI assistant stays off. Orders are kept in memory, so each deploy or restart goes back to the seed orders. On Render's free plan the service sleeps when idle, so the first request after a while takes a little longer.

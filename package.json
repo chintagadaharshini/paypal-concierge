@@ -12,13 +12,17 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/google": "^1.2.22",
+    "@paypal/agent-toolkit": "^1.11.0",
     "ag-grid-community": "36.2.0",
     "ag-grid-react": "36.2.0",
     "ag-studio": "3.0.0",
     "ag-studio-react": "3.0.0",
+    "ai": "^4.3.19",
     "next": "16.3.6",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

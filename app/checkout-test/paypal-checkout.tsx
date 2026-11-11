@@ -4,9 +4,13 @@ import { useEffect, useState } from 'react';
 import type { RuleCheck, RuleResult } from '@/lib/rules';
 import { RuleResults } from './rule-results';
 
-// PayPal JS SDK v6, sandbox. The browser only names the item (sku); the server creates the order at
-// its own price and captures it after the buyer approves.
+// PayPal JS SDK v6, sandbox. The browser only names the item (a test item's sku, or an agent draft's
+// draftId); the server creates the order at its own price and captures it after the buyer approves.
 const SDK_URL = 'https://www.sandbox.paypal.com/web-sdk/v6/core';
+
+/** What the browser sends to name the item. Never a price. */
+export type CheckoutRef = { sku: string } | { draftId: string };
+const refKey = (ref: CheckoutRef) => ('sku' in ref ? `sku:${ref.sku}` : `draft:${ref.draftId}`);
 
 // The parts of the v6 SDK this component uses.
 type OneTimeSession = {
@@ -71,11 +75,11 @@ function loadSdk(): Promise<void> {
 
 type CreateOrderResponse = { orderId?: string; error?: string; rules?: RuleResult[] };
 
-async function createOrder(sku: string, confirmed: boolean): Promise<{ orderId: string; rules: RuleResult[] }> {
+async function createOrder(ref: CheckoutRef, confirmed: boolean): Promise<{ orderId: string; rules: RuleResult[] }> {
   const res = await fetch('/api/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sku, confirmed }),
+    body: JSON.stringify({ ...ref, confirmed }),
   });
   const data = (await res.json()) as CreateOrderResponse;
   if (res.status === 403 && data.rules) throw new BlockedError(data.error ?? 'Blocked by your spending rules', data.rules);
@@ -89,7 +93,9 @@ const unlessBlocked = (next: Status) => (prev: Status) => (prev.kind === 'blocke
 // The rules preview for one tick state of the confirmation box. Read-only: it creates nothing.
 type Preview = { confirmed: boolean } & ({ check: RuleCheck } | { error: string });
 
-export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: string; sku: string; amount: string; currency: string }) {
+export function PayPalCheckout({ clientId, item, amount, currency }: { clientId: string; item: CheckoutRef; amount: string; currency: string }) {
+  // A string, so a new but equal `item` object doesn't re-run the rules preview.
+  const itemKey = refKey(item);
   const [status, setStatus] = useState<Status>({ kind: 'loading' });
   const [session, setSession] = useState<OneTimeSession | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -135,7 +141,7 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
   // PayPal button only exists for a purchase the rules allow.
   useEffect(() => {
     const controller = new AbortController();
-    fetchPreview(sku, confirmed, controller.signal)
+    fetchPreview(item, confirmed, controller.signal)
       .then((check) => setPreview({ confirmed, check }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -143,13 +149,14 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
         }
       });
     return () => controller.abort();
-  }, [sku, confirmed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- itemKey stands for item
+  }, [itemKey, confirmed]);
 
   function pay() {
     if (!session) return;
     setStatus({ kind: 'paying' });
     // The server re-checks every rule when it creates the order; it's the source of truth.
-    const order = createOrder(sku, confirmed).then(
+    const order = createOrder(item, confirmed).then(
       (created) => ({ orderId: created.orderId }),
       (error: unknown) => {
         if (error instanceof BlockedError) setStatus({ kind: 'blocked', rules: error.rules });
@@ -238,8 +245,8 @@ export function PayPalCheckout({ clientId, sku, amount, currency }: { clientId: 
   );
 }
 
-async function fetchPreview(sku: string, confirmed: boolean, signal: AbortSignal): Promise<RuleCheck> {
-  const params = new URLSearchParams({ sku, confirmed: String(confirmed) });
+async function fetchPreview(ref: CheckoutRef, confirmed: boolean, signal: AbortSignal): Promise<RuleCheck> {
+  const params = new URLSearchParams({ ...ref, confirmed: String(confirmed) });
   const res = await fetch(`/api/rules/check?${params}`, { signal, cache: 'no-store' });
   const data = (await res.json()) as Partial<RuleCheck> & { error?: string };
   if (!res.ok || !data.results) throw new Error(data.error ?? 'Could not check your rules.');

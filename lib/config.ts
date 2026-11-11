@@ -17,3 +17,32 @@ export const DEFAULT_RULES: SpendingRules = {
   requireConfirmation: true,
   blockedCategories: ['alcohol', 'tobacco', 'weapons', 'gambling', 'gift cards'],
 };
+
+// --- Shopping agent (POST /api/agent) ---------------------------------------------------
+
+// The one place the Gemini model is named. Checked against Google's docs and model list on
+// 2026-11-11: gemini-3.5-flash-lite is a stable, free-tier Flash model with function calling, and it
+// handled the agent's tools well in testing. Alternatives: gemini-3.6-flash also works, but its free
+// tier allows only 20 requests a day per project (about 6 agent runs); gemini-3.8-flash was timing
+// out under load; gemini-2.5-flash is closed to new keys. Check your limits at
+// https://aistudio.google.com/rate-limit before a demo.
+export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+
+// Guards that keep the free Gemini and Channel3 keys from being drained by a public demo.
+export const AGENT_LIMITS = {
+  /** Agent runs one visitor (IP address) may start per window. */
+  perVisitor: 5,
+  windowMs: 10 * 60 * 1000,
+  /** Agent runs for all visitors together per UTC day. */
+  perDay: 100,
+  maxMessageChars: 500,
+  /** Model round trips per run (each tool result is one more). */
+  maxSteps: 6,
+  /** Channel3 searches and drafts the agent may make in one run. */
+  maxSearches: 2,
+  maxProposals: 2,
+  /** Output tokens per model call, thinking included. */
+  maxOutputTokens: 1500,
+  thinkingBudget: 512,
+  timeoutMs: 45_000,
+} as const;

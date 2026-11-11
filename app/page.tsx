@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 const dashboard = { href: '/dashboard', label: 'Dashboard', detail: 'AG Studio reports over all of the data below' };
 const conciergeOrders = { href: '/orders', label: 'Concierge orders', detail: 'Seed and live orders, in AG Grid' };
+const agentTest = { href: '/agent-test', label: 'Shopping agent test', detail: 'POST /api/agent (Gemini)' };
 const productSearch = { href: '/search-test', label: 'Product search test', detail: 'GET /api/products/search (Channel3)' };
 
 // One page per PayPal endpoint the demo calls, each in app/(endpoints).
@@ -31,6 +32,7 @@ export default function Home() {
       <ul className="mt-6 divide-y divide-pp-border border-y border-pp-border">
         <PageLink {...dashboard} />
         <PageLink {...conciergeOrders} />
+        <PageLink {...agentTest} />
         <PageLink {...productSearch} />
       </ul>
       <h2 className="mt-10 text-sm font-semibold uppercase tracking-wider text-pp-muted">Endpoints</h2>

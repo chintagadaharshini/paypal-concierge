@@ -38,7 +38,7 @@ export default async function CheckoutTestPage() {
           </p>
           <div className="mt-6">
             {clientId ? (
-              <PayPalCheckout clientId={clientId} sku={item.sku} amount={item.price} currency={item.currency} />
+              <PayPalCheckout clientId={clientId} item={{ sku: item.sku }} amount={item.price} currency={item.currency} />
             ) : (
               <p className="text-sm text-red-700">PAYPAL_CLIENT_ID is not set (see env.example).</p>
             )}

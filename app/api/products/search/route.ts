@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const limit = Number(params.get('limit') ?? DEFAULT_LIMIT);
 
   try {
-    const products = await searchProducts(query, Number.isFinite(limit) ? limit : DEFAULT_LIMIT);
+    const products = await searchProducts(query, { limit: Number.isFinite(limit) ? limit : DEFAULT_LIMIT });
     return Response.json({ query, products }, { headers: noStore });
   } catch (error) {
     if (error instanceof Channel3Error) {

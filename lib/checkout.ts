@@ -6,7 +6,13 @@
 
 import type { OrderItem } from './paypal';
 
-export type CatalogItem = OrderItem & { category: string };
+export type CatalogItem = OrderItem & {
+  category: string;
+  /** Where the agent found it (merchant domain); unset for test items. */
+  merchant?: string | null;
+  /** What the buyer asked the agent for; unset for test items. */
+  request?: string | null;
+};
 
 const TEST_ITEMS: Record<string, CatalogItem> = {
   'test-cricket-ball': {

@@ -23,6 +23,9 @@ services:
       # Channel3 product search key.
       - key: CHANNEL3_API_KEY
         sync: false
+      # Gemini key for the shopping agent.
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
       # Optional: AG Studio licence key for /dashboard.
       - key: AG_STUDIO
         sync: false
