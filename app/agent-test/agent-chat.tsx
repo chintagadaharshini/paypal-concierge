@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentResult } from '@/lib/agent';
 import { PayPalCheckout } from '../checkout-test/paypal-checkout';
 import { RuleResults } from '../checkout-test/rule-results';
@@ -10,6 +10,33 @@ type State =
   | { kind: 'thinking' }
   | { kind: 'error'; message: string; limit: boolean }
   | { kind: 'done'; result: AgentResult };
+
+// The agent answers in one response, so progress follows the clock: a typical run spends its
+// first seconds searching, then proposes (the rules run on the server), then writes the answer.
+// Past AGENT_LIMITS.primaryTimeoutMs the server restarts on its fallback model.
+const STAGES: { from: number; label: string }[] = [
+  { from: 0, label: 'Searching products…' },
+  { from: 9, label: 'Checking your rules…' },
+  { from: 18, label: 'Writing the recommendation…' },
+  { from: 28, label: 'Gemini is slow right now, still working…' },
+];
+
+function Progress() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const stage = STAGES.findLast((s) => seconds >= s.from) ?? STAGES[0];
+  return (
+    <div role="status" aria-live="polite" className="mt-6 flex items-center gap-3 rounded-lg border border-pp-border bg-white p-4 text-sm">
+      <span aria-hidden className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-pp-border border-t-pp-blue" />
+      <span className="font-semibold">{stage.label}</span>
+      <span className="ml-auto tabular-nums text-pp-muted">{seconds}s</span>
+    </div>
+  );
+}
 
 const EXAMPLES = ['A gift under $50 for my brother who likes cricket', 'The best English willow cricket bat', 'A bottle of single malt Scotch whisky for my dad'];
 
@@ -51,7 +78,7 @@ export function AgentChat({ clientId }: { clientId: string | null }) {
             disabled={state.kind === 'thinking'}
             className="rounded-md bg-pp-blue px-4 py-2 font-semibold text-white disabled:opacity-50"
           >
-            {state.kind === 'thinking' ? 'Thinking…' : 'Ask the agent'}
+            {state.kind === 'thinking' ? 'Working…' : 'Ask the agent'}
           </button>
           {EXAMPLES.map((example) => (
             <button key={example} type="button" onClick={() => setMessage(example)} className="text-xs text-pp-blue hover:underline">
@@ -61,6 +88,7 @@ export function AgentChat({ clientId }: { clientId: string | null }) {
         </div>
       </form>
 
+      {state.kind === 'thinking' && <Progress />}
       {state.kind === 'error' && (
         <p className={`mt-4 rounded-md p-3 text-sm ${state.limit ? 'bg-amber-50 text-amber-900' : 'bg-red-50 text-red-800'}`}>{state.message}</p>
       )}

@@ -28,6 +28,12 @@ export const DEFAULT_RULES: SpendingRules = {
 // https://aistudio.google.com/rate-limit before a demo.
 export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
+// Used only when GEMINI_MODEL times out or keeps returning 503: the run restarts on this model with
+// the time left. Checked on 2026-11-11: gemini-3.6-flash is a stable model with function calling
+// (default thinking: medium). Its free tier allows 20 requests a day per project
+// (GenerateRequestsPerDayPerProjectPerModel-FreeTier), a separate quota from GEMINI_MODEL's.
+export const GEMINI_FALLBACK_MODEL = 'gemini-3.6-flash';
+
 // Guards that keep the free Gemini and Channel3 keys from being drained by a public demo.
 export const AGENT_LIMITS = {
   /** Agent runs one visitor (IP address) may start per window. */
@@ -49,5 +55,8 @@ export const AGENT_LIMITS = {
    * So this is a ceiling against spikes, not a speed-up: call latency comes from Gemini's load.
    */
   thinkingBudget: 128,
-  timeoutMs: 45_000,
+  /** The whole run, fallback included. Below the route's 60s maxDuration (app/api/agent/route.ts). */
+  timeoutMs: 55_000,
+  /** The primary model's share; the fallback gets the rest. */
+  primaryTimeoutMs: 28_000,
 } as const;

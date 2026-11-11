@@ -10,7 +10,7 @@ import { PayPalAgentToolkit } from '@paypal/agent-toolkit/ai-sdk';
 import { generateText, tool, type Tool } from 'ai';
 import { z } from 'zod';
 import { Channel3Error, searchProducts, type ProductResult } from './channel3';
-import { AGENT_LIMITS, DEFAULT_RULES } from './config';
+import { AGENT_LIMITS, DEFAULT_RULES, GEMINI_FALLBACK_MODEL, GEMINI_MODEL } from './config';
 import { createDraft, type Draft } from './drafts';
 import { geminiModel } from './gemini';
 import { addLiveOrder } from './orders-store';
@@ -65,7 +65,66 @@ export class AgentError extends Error {
   }
 }
 
+type RunStats = { model: string; startedAt: number; steps: number; tools: string[] };
+
+const seconds = (since: number) => ((Date.now() - since) / 1000).toFixed(1);
+
+/** Busy or slow Gemini: worth one restart on the fallback model. */
+function isBusy(error: unknown): boolean {
+  const err = error as { name?: string; statusCode?: number; lastError?: { statusCode?: number } };
+  return err.name === 'TimeoutError' || err.name === 'AbortError' || (err.statusCode ?? err.lastError?.statusCode) === 503;
+}
+
+const statusOf = (error: unknown) => {
+  const err = error as { statusCode?: number; lastError?: { statusCode?: number } };
+  return err.statusCode ?? err.lastError?.statusCode;
+};
+
+/**
+ * Runs the agent on the primary model. If that times out (after AGENT_LIMITS.primaryTimeoutMs) or
+ * keeps returning 503, the whole run starts again on the fallback model with the time left. It
+ * restarts rather than switching mid-run, because one model's thought signatures can't be sent to
+ * another. Searches are cached, so the restart doesn't spend Channel3 credits twice. BLOCKED
+ * orders are recorded only from the run that answered, so a failed run never leaves a row.
+ */
 export async function runAgent(message: string): Promise<AgentResult> {
+  const startedAt = Date.now();
+  const deadline = startedAt + AGENT_LIMITS.timeoutMs;
+  const plan = [
+    { model: GEMINI_MODEL, timeoutMs: AGENT_LIMITS.primaryTimeoutMs },
+    { model: GEMINI_FALLBACK_MODEL, timeoutMs: 0 }, // 0: whatever time is left.
+  ];
+
+  let firstError: unknown;
+  for (const [i, step] of plan.entries()) {
+    const run: RunStats = { model: step.model, startedAt: Date.now(), steps: 0, tools: [] };
+    const timeoutMs = Math.min(step.timeoutMs || Infinity, deadline - Date.now());
+    try {
+      const { result, drafts } = await runAttempt(message, step.model, timeoutMs, run);
+      console.log(`[agent] answered by ${step.model} in ${seconds(startedAt)}s (${run.steps} steps)`);
+      for (const draft of drafts) {
+        const view = draftView(draft);
+        if (view.blocked) recordBlocked(draft, view.rules);
+      }
+      return result;
+    } catch (error) {
+      const last = i === plan.length - 1;
+      const status = isBusy(error) && !statusOf(error) ? 'timeout' : (statusOf(error) ?? (error as Error)?.name);
+      console.warn(
+        `[agent] ${step.model} failed (${status}) after ${seconds(run.startedAt)}s, ${run.steps} steps, tools: ${run.tools.join(' > ') || 'none'}` +
+          (!last && isBusy(error) ? `; restarting on ${plan[i + 1].model} with ${((deadline - Date.now()) / 1000).toFixed(0)}s left` : ''),
+      );
+      firstError ??= error;
+      if (last || !isBusy(error)) {
+        // A fallback that is out of quota says nothing useful: report why the primary failed.
+        throw toAgentError(i > 0 && statusOf(error) === 429 ? firstError : error);
+      }
+    }
+  }
+  throw new AgentError(500, 'The agent could not answer. Please try again.'); // Unreachable.
+}
+
+async function runAttempt(message: string, modelId: string, timeoutMs: number, run: RunStats): Promise<{ result: AgentResult; drafts: Draft[] }> {
   const found = new Map<string, ProductResult>(); // This run's search results, by product id.
   const drafts = new Map<string, Draft>(); // This run's drafts, by draftId.
   let searches = 0;
@@ -116,8 +175,7 @@ export async function runAgent(message: string): Promise<AgentResult> {
         if (!draft) return { error: 'That product is no longer available. Search again.' };
         drafts.set(draft.id, draft);
 
-        const view = draftView(draft);
-        if (view.blocked) recordBlocked(draft, view.rules);
+        const view = draftView(draft); // A blocked draft is recorded once the run has answered (runAgent).
         return {
           draftId: draft.id,
           title: draft.item.name,
@@ -144,36 +202,26 @@ export async function runAgent(message: string): Promise<AgentResult> {
     ...paypalTools(),
   };
 
-  // For the log line when a run fails: how far it got.
-  const run = { startedAt: Date.now(), steps: 0, tools: [] as string[] };
-
-  let result;
-  try {
-    result = await generateText({
-      model: geminiModel(),
-      system: SYSTEM_PROMPT,
-      prompt: message,
-      tools,
-      toolChoice: 'required',
-      maxSteps: AGENT_LIMITS.maxSteps,
-      maxTokens: AGENT_LIMITS.maxOutputTokens,
-      temperature: 0.2,
-      // Retries apply to each model call, not the whole run, so keep them few: one retry after 2s
-      // rides out a brief 503 or 429 without eating the run's time budget.
-      maxRetries: 1,
-      abortSignal: AbortSignal.timeout(AGENT_LIMITS.timeoutMs),
-      providerOptions: { google: { thinkingConfig: { thinkingBudget: AGENT_LIMITS.thinkingBudget } } },
-      onStepFinish: (step) => {
-        run.steps++;
-        run.tools.push(...step.toolCalls.map((c) => c.toolName));
-      },
-    });
-  } catch (error) {
-    const agentError = toAgentError(error);
-    const elapsed = ((Date.now() - run.startedAt) / 1000).toFixed(1);
-    console.warn(`[agent] run failed (${agentError.status}) after ${elapsed}s, ${run.steps} steps, tools: ${run.tools.join(' > ') || 'none'}`);
-    throw agentError;
-  }
+  const result = await generateText({
+    model: geminiModel(modelId),
+    system: SYSTEM_PROMPT,
+    prompt: message,
+    tools,
+    toolChoice: 'required',
+    maxSteps: AGENT_LIMITS.maxSteps,
+    maxTokens: AGENT_LIMITS.maxOutputTokens,
+    temperature: 0.2,
+    // Retries apply to each model call, not the whole run, so keep them few: one retry after 2s
+    // rides out a brief 503 or 429 without eating the run's time budget.
+    maxRetries: 1,
+    abortSignal: AbortSignal.timeout(timeoutMs),
+    providerOptions: { google: { thinkingConfig: { thinkingBudget: AGENT_LIMITS.thinkingBudget } } },
+    // For runAgent's log line if this run fails: how far it got.
+    onStepFinish: (step) => {
+      run.steps++;
+      run.tools.push(...step.toolCalls.map((c) => c.toolName));
+    },
+  });
 
   const toolsUsed = result.steps.flatMap((s) => s.toolCalls.map((c) => c.toolName));
   const final = result.toolCalls.find((c) => c.toolName === 'final_answer')?.args as
@@ -185,11 +233,14 @@ export async function runAgent(message: string): Promise<AgentResult> {
   const draft = final?.nothing_fits ? undefined : ((final?.draft_id && drafts.get(final.draft_id)) || lastDraft);
 
   return {
-    recommendation: final?.recommendation || result.text || 'Sorry, I could not finish that request. Please try again.',
-    reason: final?.reason ?? '',
-    nothingFits: final?.nothing_fits ?? !draft,
-    draft: draft ? draftView(draft) : null,
-    toolsUsed,
+    result: {
+      recommendation: final?.recommendation || result.text || 'Sorry, I could not finish that request. Please try again.',
+      reason: final?.reason ?? '',
+      nothingFits: final?.nothing_fits ?? !draft,
+      draft: draft ? draftView(draft) : null,
+      toolsUsed,
+    },
+    drafts: [...drafts.values()],
   };
 }
 

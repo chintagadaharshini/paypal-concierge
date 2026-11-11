@@ -8,6 +8,6 @@ import { withThoughtSignatures } from './thought-signatures';
 export const geminiConfigured = () => !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
 /** A fresh Gemini model for one agent run (its own thought-signature memory; see thought-signatures.ts). */
-export function geminiModel() {
-  return createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY, fetch: withThoughtSignatures() })(GEMINI_MODEL);
+export function geminiModel(modelId: string = GEMINI_MODEL) {
+  return createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY, fetch: withThoughtSignatures() })(modelId);
 }
