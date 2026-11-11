@@ -1,5 +1,7 @@
+import { listOrders, type StoredOrder } from './orders-store';
 import {
   amountOf,
+  PayPalApiError,
   getBalances,
   listInvoices,
   listPlans,
@@ -20,7 +22,8 @@ import {
 //   invoiceItems.invoiceId     -> invoices.id
 //   invoicePayments.invoiceId  -> invoices.id
 //   plans.productId            -> products.id
-// Invoice, payment, transaction and payout dates also bind to a shared calendar.
+//   orderBlocks.orderId        -> orders.id
+// Invoice, payment, transaction, payout and Concierge order dates also bind to a shared calendar.
 
 const DAY_MS = 86_400_000;
 
@@ -273,31 +276,101 @@ function balanceRows({ balances = [] }: Balances) {
   }));
 }
 
+// --- Concierge orders ---------------------------------------------------------------
+// From this app's own store (lib/orders-store.ts), not from PayPal.
+
+const ORDER_STATUS: Record<StoredOrder['status'], string> = {
+  COMPLETED: 'Completed',
+  BLOCKED: 'Blocked',
+  DECLINED: 'Declined',
+};
+
+function orderRows(orders: StoredOrder[]) {
+  return orders.map((o) => ({
+    id: o.id,
+    createdAt: o.createdAt,
+    source: o.source === 'live' ? 'Live' : 'Seed',
+    status: ORDER_STATUS[o.status],
+    request: o.request,
+    product: o.product,
+    category: o.category ? o.category[0].toUpperCase() + o.category.slice(1) : null,
+    merchant: o.merchant,
+    currency: o.currency,
+    amount: o.amount,
+    // Money that actually left the buyer (captured), and money the guardrails stopped.
+    spent: o.status === 'COMPLETED' ? o.amount : 0,
+    blockedAmount: o.status === 'BLOCKED' ? o.amount : 0,
+    isBlocked: o.status === 'BLOCKED' ? 1 : 0,
+    blockedBy: o.blockedBy,
+    paypalOrderId: o.paypalOrderId,
+  }));
+}
+
+// One row per rule that refused an order. An order can fail more than one rule
+// ('Spend limit, Confirmation'), so counting rules needs its own table.
+function orderBlockRows(orders: StoredOrder[]) {
+  return orders.flatMap((o) =>
+    o.status === 'BLOCKED' && o.blockedBy
+      ? o.blockedBy.split(',').map((rule, i) => ({ id: `${o.id}-${i + 1}`, orderId: o.id, rule: rule.trim(), amount: o.amount }))
+      : [],
+  );
+}
+
 // --- Snapshot -----------------------------------------------------------------------
 
 const TRANSACTION_WINDOW_MS = TRANSACTION_SEARCH_MAX_DAYS * DAY_MS;
 
+/** A data source that could not be loaded, for the dashboard's "couldn't load" note. */
+export type SourceError = { source: string; reason: string };
+
+// A short, safe reason for the browser: the HTTP status and PayPal debug id, never the response body.
+function reasonOf(error: unknown) {
+  if (error instanceof PayPalApiError) return `PayPal returned HTTP ${error.status}${error.debugId ? ` (debug_id ${error.debugId})` : ''}`;
+  if (error instanceof Error && error.message.includes('must be set')) return 'PayPal credentials are not configured';
+  return 'Request failed';
+}
+
+// Each source is fetched on its own, so one failing PayPal call leaves the others on the dashboard.
 export async function getDashboardData(asOf = new Date()) {
-  const [products, plans, invoices, transactions, balances] = await Promise.all([
+  const [products, plans, invoices, transactions, balances, orders] = await Promise.allSettled([
     listProducts(),
     listPlans(),
     listInvoices(),
     searchTransactions(new Date(asOf.getTime() - TRANSACTION_WINDOW_MS), asOf),
     getBalances(),
+    Promise.resolve().then(listOrders),
   ]);
+
+  const errors: SourceError[] = [];
+  const valueOf = <T>(result: PromiseSettledResult<T>, source: string, fallback: T): T => {
+    if (result.status === 'fulfilled') return result.value;
+    console.error(`[dashboard] could not load ${source}:`, result.reason instanceof Error ? result.reason.message : result.reason);
+    errors.push({ source, reason: reasonOf(result.reason) });
+    return fallback;
+  };
+
+  const productList = valueOf(products, 'Products', []);
+  const planList = valueOf(plans, 'Billing plans', []);
+  const invoiceList = valueOf(invoices, 'Invoices', []);
+  const transactionList = valueOf(transactions, 'Transactions and payouts', []);
+  const balanceData = valueOf(balances, 'Balances', {});
+  const orderList = valueOf(orders, 'Concierge orders', []);
   const today = asOf.toISOString().slice(0, 10);
 
   return {
     asOf: asOf.toISOString(),
-    customers: customerRows(invoices),
-    invoices: invoiceRows(invoices, today),
-    invoiceItems: invoiceItemRows(invoices),
-    invoicePayments: invoicePaymentRows(invoices),
-    products: productRows(products),
-    plans: planRows(plans),
-    transactions: transactionRows(transactions),
-    payouts: payoutRows(transactions),
-    balances: balanceRows(balances),
+    errors,
+    customers: customerRows(invoiceList),
+    invoices: invoiceRows(invoiceList, today),
+    invoiceItems: invoiceItemRows(invoiceList),
+    invoicePayments: invoicePaymentRows(invoiceList),
+    products: productRows(productList),
+    plans: planRows(planList),
+    transactions: transactionRows(transactionList),
+    payouts: payoutRows(transactionList),
+    balances: balanceRows(balanceData),
+    orders: orderRows(orderList),
+    orderBlocks: orderBlockRows(orderList),
   };
 }
 

@@ -24,6 +24,7 @@ export const BUILT_IN_ID = 'paypal-overview';
 
 // Sidebar titles for the built-in report's pages, keyed by page id in initial-report.ts.
 const defaultPageTitles: Record<string, string> = {
+  concierge: 'Concierge',
   revenue: 'Revenue',
   receivables: 'Receivables',
   cash: 'Cash & payouts',

@@ -1,4 +1,4 @@
-// The built-in "PayPal overview" report: pages for revenue, receivables, cash and catalogue, as
+// The built-in "PayPal overview" report: pages for the Concierge's orders, revenue, receivables, cash and catalogue, as
 // AG Studio report state. Field ids ('invoices.paidAmount') refer to the data sources in ./data.ts.
 
 import type { AgPageState, AgReportState, AgWidgetLayoutState } from 'ag-studio';
@@ -42,6 +42,80 @@ const kpi = (text: string, value: { id: string; aggregation?: 'sum' | 'avg' | 'c
 });
 
 // --- Pages ------------------------------------------------------------------------
+
+// What the AI shopping agent bought, what the spending rules stopped, and why. Laid out for a screen
+// recording: four headline numbers, one chart per row of story, and the latest orders at the bottom.
+const concierge: AgPageState = {
+  id: 'concierge',
+  widgets: {
+    'kpi-spent': kpi('Spent (completed)', sum('orders.spent')),
+    'kpi-orders': kpi('Orders', countd('orders.id')),
+    'kpi-blocked': kpi('Purchases blocked', sum('orders.isBlocked')),
+    'kpi-saved': kpi('Stopped by guardrails', sum('orders.blockedAmount')),
+    'spend-over-time': {
+      type: 'column-chart-stacked',
+      dataMapping: {
+        // The order's own date, so the axis spans order days only, not the whole shared calendar.
+        categoryKey: [{ id: 'orders.createdAt::day' }],
+        valueKey: [sum('orders.spent'), sum('orders.blockedAmount')],
+      },
+      format: {
+        ...title('Spend over time: paid vs blocked by the rules'),
+        style: { theme: { common: { legend: { enabled: true } } } },
+      },
+    },
+    'orders-by-status': {
+      type: 'donut-chart',
+      dataMapping: {
+        categoryKey: [{ id: 'orders.status' }],
+        valueKey: [countd('orders.id')],
+      },
+      format: {
+        ...title('Orders by status'),
+        style: {
+          custom: {
+            pieDataLabel: { enabled: true },
+            totalLabel: { enabled: true },
+          },
+        },
+      },
+    },
+    'blocked-by-rule': {
+      type: 'bar-chart-grouped',
+      dataMapping: {
+        categoryKey: [{ id: 'orderBlocks.rule' }],
+        valueKey: [countd('orderBlocks.orderId')],
+      },
+      format: title('Blocked purchases by rule'),
+    },
+    'recent-orders': {
+      type: 'grid',
+      dataMapping: {
+        cols: [
+          { id: 'orders.createdAt' },
+          { id: 'orders.product' },
+          { id: 'orders.category' },
+          { id: 'orders.status' },
+          { id: 'orders.blockedBy' },
+          { id: 'orders.source' },
+          sum('orders.amount'),
+        ],
+      },
+      sort: [{ field: { id: 'orders.createdAt' }, direction: 'desc' }],
+      format: title('Recent orders, newest first'),
+    },
+  },
+  widgetLayout: {
+    'kpi-spent': at(0, 0, 6, 7),
+    'kpi-orders': at(6, 0, 6, 7),
+    'kpi-blocked': at(12, 0, 6, 7),
+    'kpi-saved': at(18, 0, 6, 7),
+    'spend-over-time': at(0, 7, 24, 16),
+    'orders-by-status': at(0, 23, 12, 16),
+    'blocked-by-rule': at(12, 23, 12, 16),
+    'recent-orders': at(0, 39, 24, 22),
+  },
+};
 
 const revenue: AgPageState = {
   id: 'revenue',
@@ -395,8 +469,8 @@ const catalogue: AgPageState = {
     'catalogue-sunburst': at(16, 27, 8, 24),
   },
 };
-// The report opens on its first page.
+// The report opens on its first page: the Concierge.
 export const dashboardReport: AgReportState = {
-  selectedPageId: revenue.id,
-  pages: [revenue, receivables, cash, catalogue],
+  selectedPageId: concierge.id,
+  pages: [concierge, revenue, receivables, cash, catalogue],
 };

@@ -141,5 +141,31 @@
     "currency": "USD",
     "status": "COMPLETED",
     "blockedBy": null
+  },
+  {
+    "id": "seed-12",
+    "daysAgo": 9,
+    "time": "21:05",
+    "request": "Noise-cancelling headphones for my commute",
+    "product": "Over-ear noise-cancelling headphones",
+    "category": "electronics",
+    "merchant": "SoundHouse",
+    "amount": "89.00",
+    "currency": "USD",
+    "status": "BLOCKED",
+    "blockedBy": "Spend limit"
+  },
+  {
+    "id": "seed-13",
+    "daysAgo": 15,
+    "time": "10:40",
+    "request": "A $25 gift card for a colleague",
+    "product": "Coffee shop gift card, $25",
+    "category": "gift cards",
+    "merchant": "Bean & Leaf",
+    "amount": "25.00",
+    "currency": "USD",
+    "status": "BLOCKED",
+    "blockedBy": "Blocked category"
   }
 ]

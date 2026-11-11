@@ -53,15 +53,16 @@ const ratio = (id: string, name: string, description: string, numerator: string,
 // --- Data sources -----------------------------------------------------------------
 
 
-// Whether the PayPal account has anything to report on. Without it, Studio would only show empty widgets.
+// Whether there is anything to report on. Without it, Studio would only show empty widgets.
 export const hasData = (data: DashboardData) =>
-  [data.invoices, data.transactions, data.products, data.plans, data.balances].some((rows) => rows.length > 0);
+  [data.orders, data.invoices, data.transactions, data.products, data.plans, data.balances].some((rows) => rows.length > 0);
 
 export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
   const dates = [
     ...data.invoices.map((r) => r.invoiceDate),
     ...data.invoicePayments.map((r) => r.date),
     ...data.transactions.map((r) => r.date?.slice(0, 10)),
+    ...data.orders.map((r) => r.createdAt.slice(0, 10)),
   ]
     .filter((d): d is string => !!d)
     .sort();
@@ -71,8 +72,45 @@ export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
     description:
       'PayPal sandbox data fetched over the REST API for a merchant that sells subscription products and sends invoices. ' +
       'Invoices are in USD, EUR or GBP and are not converted, so filter by currency before summing money. ' +
-      'Invoice payments are recorded externally (bank transfer, card, check, cash). The ledger holds payouts to affiliates, creators and customers.',
+      'Invoice payments are recorded externally (bank transfer, card, check, cash). The ledger holds payouts to affiliates, creators and customers. ' +
+      "Concierge orders come from this app's own store: purchases the AI shopping agent made or tried to make, in USD.",
     sources: [
+      {
+        id: 'orders',
+        name: 'Concierge Orders',
+        description:
+          'Purchases the Concierge agent made or tried to make. Completed orders were paid in the PayPal sandbox; Blocked orders were refused by the spending rules and never reached PayPal; Declined orders were refused by PayPal. Spent counts only completed orders. Source is Seed (sample history) or Live (made in this app).',
+        data: data.orders,
+        fields: fields([
+          ['id', 'Order ID', 'textFormat', true],
+          ['createdAt', 'Order Date', 'dateTimeFormat'],
+          ['source', 'Order Source', 'textFormat'],
+          ['status', 'Order Status', 'textFormat'],
+          ['request', 'Request', 'textFormat'],
+          ['product', 'Item', 'textFormat'],
+          ['category', 'Category', 'textFormat'],
+          ['merchant', 'Merchant', 'textFormat'],
+          ['currency', 'Order Currency', 'textFormat', true],
+          ['amount', 'Order Amount', 'currencyFormat'],
+          ['spent', 'Spent', 'currencyFormat'],
+          ['blockedAmount', 'Blocked Amount', 'currencyFormat'],
+          ['isBlocked', 'Blocked Orders', 'integerFormat'],
+          ['blockedBy', 'Blocked By', 'textFormat'],
+          ['paypalOrderId', 'PayPal Order ID', 'textFormat'],
+        ]),
+      },
+      {
+        id: 'orderBlocks',
+        name: 'Blocked by Rule',
+        description: 'One row per spending rule that refused a Concierge order; an order that failed two rules has two rows.',
+        data: data.orderBlocks,
+        fields: fields([
+          ['id', 'Block ID', 'textFormat', true],
+          ['orderId', 'Order ID', 'textFormat', true],
+          ['rule', 'Rule', 'textFormat'],
+          ['amount', 'Amount Blocked', 'currencyFormat'],
+        ]),
+      },
       {
         id: 'customers',
         description: 'Invoice recipients, keyed by lower-cased email.',
@@ -226,10 +264,12 @@ export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
       manyToOne('item-invoice', 'invoiceItems.invoiceId', 'invoices.id'),
       manyToOne('payment-invoice', 'invoicePayments.invoiceId', 'invoices.id'),
       manyToOne('plan-product', 'plans.productId', 'products.id'),
+      manyToOne('block-order', 'orderBlocks.orderId', 'orders.id'),
       onCalendar('invoices', 'invoiceDate'),
       onCalendar('invoicePayments', 'date'),
       onCalendar('transactions', 'date', 'day'),
       onCalendar('payouts', 'date', 'day'),
+      onCalendar('orders', 'createdAt', 'day'),
     ],
     calendars: [
       {

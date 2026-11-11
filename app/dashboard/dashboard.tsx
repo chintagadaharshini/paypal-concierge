@@ -43,6 +43,7 @@ import {
 } from './reports-store';
 import { pagesFor, pageTitlesFor } from './page-titles';
 import { ReportsSidebar } from './components/sidebar';
+import { SourceErrors } from './components/source-errors';
 import { DashboardSkeleton } from './components/skeleton';
 import * as reportState from './report-state';
 import { buildAi } from './studio/ai';
@@ -254,6 +255,8 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
           next ? changeMode('edit') : guard(() => changeMode('view'))
         }
       />
+
+      <SourceErrors errors={data.errors} />
 
       <div className="min-h-0 flex-1">
         {hasData(data) ? (
