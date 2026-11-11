@@ -35,8 +35,19 @@ export function withThoughtSignatures(fetchImpl: typeof fetch = fetch): typeof f
       init = { ...init, body: JSON.stringify(body) };
     }
 
-    const res = await fetchImpl(input, init);
-    const text = await res.text();
+    // One line per Gemini call: status and duration only (never the URL, which may carry the key, or bodies).
+    const started = Date.now();
+    const seconds = () => ((Date.now() - started) / 1000).toFixed(1);
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetchImpl(input, init);
+      text = await res.text();
+    } catch (error) {
+      console.warn(`[gemini] ${error instanceof Error ? error.name : 'error'} after ${seconds()}s`);
+      throw error;
+    }
+    console.log(`[gemini] ${res.status} in ${seconds()}s`);
     try {
       const data = JSON.parse(text) as { candidates?: { content?: Content }[] };
       const calls = (data.candidates?.[0]?.content?.parts ?? [])

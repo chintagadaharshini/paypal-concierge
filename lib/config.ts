@@ -43,6 +43,11 @@ export const AGENT_LIMITS = {
   maxProposals: 2,
   /** Output tokens per model call, thinking included. */
   maxOutputTokens: 1500,
-  thinkingBudget: 512,
+  /**
+   * Cap on thinking tokens per call. gemini-3.5-flash-lite defaults to "minimal" thinking and, in a
+   * test on 2026-11-11, used 0 thinking tokens at budgets 512 and 128 alike; 0 is rejected (400).
+   * So this is a ceiling against spikes, not a speed-up: call latency comes from Gemini's load.
+   */
+  thinkingBudget: 128,
   timeoutMs: 45_000,
 } as const;
