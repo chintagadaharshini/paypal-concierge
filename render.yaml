@@ -1,0 +1,25 @@
+# Render Blueprint: one Node web service running the Next.js app.
+# Render: New > Blueprint, pick this repo. Secrets are marked `sync: false`, so Render asks for
+# their values when the Blueprint is created; they are never stored in this file.
+services:
+  - type: web
+    name: paypal-concierge
+    runtime: node
+    plan: free
+    # npm ci installs devDependencies too (Tailwind and TypeScript are needed to build).
+    buildCommand: npm ci && npm run build
+    # `next start` listens on $PORT (set by Render) and on 0.0.0.0 by default.
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # PayPal SANDBOX REST app credentials. Never use live credentials.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_SECRET
+        sync: false
+      # Optional: AG Studio licence key for /dashboard.
+      - key: AG_STUDIO
+        sync: false

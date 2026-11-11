@@ -49,6 +49,16 @@ The key never reaches the browser. Studio's adapter ([`openai-adapter.ts`](app/d
 
 In production `.env.local` isn't deployed: set the variable in your host's environment (e.g. Vercel project settings, `docker run --env-file`, or a secrets manager), as with the PayPal credentials. The route has no auth or rate limiting, so don't deploy it publicly with a real key without adding one.
 
+## Deploy to Render
+
+The repo has a [`render.yaml`](render.yaml) Blueprint: one Node web service that runs `npm ci && npm run build`, then `npm start` (`next start` listens on Render's `PORT`).
+
+1. In Render, choose **New > Blueprint** and connect this repository.
+2. When asked, enter `PAYPAL_CLIENT_ID` and `PAYPAL_SECRET` from your PayPal **sandbox** REST app. `AG_STUDIO` is optional.
+3. Click **Apply**. When the deploy is live, open the `.onrender.com` URL.
+
+Leave `AG_STUDIO_OPENAI_API_KEY` and `OPENAI_API_KEY` unset so the dashboard's AI assistant stays off. Orders are kept in memory, so each deploy or restart goes back to the seed orders. On Render's free plan the service sleeps when idle, so the first request after a while takes a little longer.
+
 ## How it works
 
 ```
