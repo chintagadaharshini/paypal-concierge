@@ -30,6 +30,10 @@ Open [http://localhost:3000](http://localhost:3000). Next.js only loads the dott
 
 Other scripts: `npm run build` (production build), `npm run start` (serve the build), `npm run lint`.
 
+### Product search (Channel3)
+
+Set `CHANNEL3_API_KEY` in `.env.local` (free account at [trychannel3.com](https://trychannel3.com)). Try it at [/search-test](http://localhost:3000/search-test), or call `GET /api/products/search?q=cricket+bat&limit=5` directly. See [`lib/channel3.ts`](lib/channel3.ts).
+
 ### AG Studio licence (optional)
 
 Set `AG_STUDIO` in `.env.local` to your AG Studio licence key. The dashboard passes it to `AgStudioProvider`.
@@ -54,7 +58,7 @@ In production `.env.local` isn't deployed: set the variable in your host's envir
 The repo has a [`render.yaml`](render.yaml) Blueprint: one Node web service that runs `npm ci && npm run build`, then `npm start` (`next start` listens on Render's `PORT`).
 
 1. In Render, choose **New > Blueprint** and connect this repository.
-2. When asked, enter `PAYPAL_CLIENT_ID` and `PAYPAL_SECRET` from your PayPal **sandbox** REST app. `AG_STUDIO` is optional.
+2. When asked, enter `PAYPAL_CLIENT_ID` and `PAYPAL_SECRET` from your PayPal **sandbox** REST app, and `CHANNEL3_API_KEY` from your Channel3 account. `AG_STUDIO` is optional.
 3. Click **Apply**. When the deploy is live, open the `.onrender.com` URL.
 
 Leave `AG_STUDIO_OPENAI_API_KEY` and `OPENAI_API_KEY` unset so the dashboard's AI assistant stays off. Orders are kept in memory, so each deploy or restart goes back to the seed orders. On Render's free plan the service sleeps when idle, so the first request after a while takes a little longer.

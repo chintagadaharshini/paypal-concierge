@@ -20,6 +20,9 @@ services:
         sync: false
       - key: PAYPAL_SECRET
         sync: false
+      # Channel3 product search key.
+      - key: CHANNEL3_API_KEY
+        sync: false
       # Optional: AG Studio licence key for /dashboard.
       - key: AG_STUDIO
         sync: false
