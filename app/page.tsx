@@ -28,7 +28,17 @@ function PageLink({ href, label, detail }: { href: string; label: string; detail
 export default function Home() {
   return (
     <main className="mx-auto w-full max-w-3xl p-16 font-paypal text-pp-ink">
-      <h1 className="text-[28px] font-semibold text-pp-navy">PayPal REST APIs with AG Grid &amp; AG Studio</h1>
+      <Link
+        href="/concierge"
+        className="group block rounded-2xl bg-pp-navy p-8 text-white shadow-sm transition hover:bg-pp-blue-dark"
+      >
+        <p className="text-xs font-semibold uppercase tracking-wider text-pp-sky">Start here · main demo</p>
+        <p className="mt-2 text-3xl font-semibold">PayPal Concierge →</p>
+        <p className="mt-2 max-w-xl text-white/80">
+          An AI shopping agent that can pay with PayPal, but only within your rules. Try an allowed purchase and two blocked ones.
+        </p>
+      </Link>
+      <h1 className="mt-12 text-[28px] font-semibold text-pp-navy">PayPal REST APIs with AG Grid &amp; AG Studio</h1>
       <ul className="mt-6 divide-y divide-pp-border border-y border-pp-border">
         <PageLink {...dashboard} />
         <PageLink {...conciergeOrders} />

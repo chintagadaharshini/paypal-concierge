@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { RuleCheck, RuleResult } from '@/lib/rules';
 import { RuleResults } from './rule-results';
 
@@ -93,13 +93,34 @@ const unlessBlocked = (next: Status) => (prev: Status) => (prev.kind === 'blocke
 // The rules preview for one tick state of the confirmation box. Read-only: it creates nothing.
 type Preview = { confirmed: boolean } & ({ check: RuleCheck } | { error: string });
 
-export function PayPalCheckout({ clientId, item, amount, currency }: { clientId: string; item: CheckoutRef; amount: string; currency: string }) {
+export function PayPalCheckout({
+  clientId,
+  item,
+  amount,
+  currency,
+  onPaid,
+  paidExtra,
+}: {
+  clientId: string;
+  item: CheckoutRef;
+  amount: string;
+  currency: string;
+  /** Called once after a capture succeeds, with the amount the server captured. Display only. */
+  onPaid?: (paid: { captureId: string; amount: string }) => void;
+  /** Extra content inside the success box (e.g. a link to the dashboard). */
+  paidExtra?: ReactNode;
+}) {
   // A string, so a new but equal `item` object doesn't re-run the rules preview.
   const itemKey = refKey(item);
   const [status, setStatus] = useState<Status>({ kind: 'loading' });
   const [session, setSession] = useState<OneTimeSession | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
+  // A ref, so a new callback each render doesn't restart the SDK effect.
+  const onPaidRef = useRef(onPaid);
+  useEffect(() => {
+    onPaidRef.current = onPaid;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +139,9 @@ export function PayPalCheckout({ clientId, item, amount, currency }: { clientId:
             const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/capture`, { method: 'POST' });
             const data = (await res.json()) as { captureId?: string; amount?: { value: string; currency_code: string }; error?: string };
             if (res.ok && data.captureId && data.amount) {
-              setStatus({ kind: 'paid', captureId: data.captureId, amount: `${data.amount.value} ${data.amount.currency_code}` });
+              const paid = { captureId: data.captureId, amount: `${data.amount.value} ${data.amount.currency_code}` };
+              setStatus({ kind: 'paid', ...paid });
+              onPaidRef.current?.(paid);
             } else {
               setStatus({ kind: 'error', message: data.error ?? 'The payment could not be captured.' });
             }
@@ -193,6 +216,7 @@ export function PayPalCheckout({ clientId, item, amount, currency }: { clientId:
         <div className="rounded-md bg-green-50 p-4 text-sm text-green-900">
           <p className="font-semibold">Payment captured: {status.amount}</p>
           <p className="mt-1 font-mono text-xs">Capture ID {status.captureId}</p>
+          {paidExtra}
         </div>
         {results && <RuleResults results={results} />}
       </div>

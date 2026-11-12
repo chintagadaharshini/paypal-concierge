@@ -13,6 +13,7 @@
 
 A Next.js app that reads PayPal sandbox data over the [PayPal REST API](https://developer.paypal.com/api/rest/) and shows it two ways:
 
+- **PayPal Concierge** (`/concierge`, the main demo): ask the AI shopping agent for something, see its pick and a "Why" panel of rule results, then pay in the PayPal sandbox only if your guardrails allow it.
 - **Endpoint pages**: one [AG Grid](https://www.ag-grid.com/react-data-grid/) per PayPal endpoint the demo calls, showing what each returns.
 - **Dashboard** (`/dashboard`): an [AG Studio](https://www.ag-grid.com/studio/) report over all of that data, joined together, which you can edit and save in the browser.
 
@@ -36,7 +37,7 @@ Set `CHANNEL3_API_KEY` in `.env.local` (free account at [trychannel3.com](https:
 
 ### Shopping agent (Gemini)
 
-Set `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` (free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)). Try it at [/agent-test](http://localhost:3000/agent-test). The model id is `GEMINI_MODEL` in [`lib/config.ts`](lib/config.ts).
+Set `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` (free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)). Try it at [/concierge](http://localhost:3000/concierge) (the polished demo page) or [/agent-test](http://localhost:3000/agent-test) (the bare test page). The model id is `GEMINI_MODEL` in [`lib/config.ts`](lib/config.ts).
 
 The agent ([`lib/agent.ts`](lib/agent.ts)) uses the Vercel AI SDK 4 with tools to search Channel3, propose a purchase, and read PayPal sandbox orders and transactions through [`@paypal/agent-toolkit`](https://developer.paypal.com/ai-tools/toolkit.md) (read-only actions, `sandbox: true`). It never pays and never sets a price:
 

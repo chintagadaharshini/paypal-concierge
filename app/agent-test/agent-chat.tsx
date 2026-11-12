@@ -5,9 +5,10 @@ import type { AgentResult } from '@/lib/agent';
 import { PayPalCheckout } from '../checkout-test/paypal-checkout';
 import { RuleResults } from '../checkout-test/rule-results';
 
-type State =
+export type AgentState =
   | { kind: 'idle' }
   | { kind: 'thinking' }
+  /** `limit`: a demo or AI quota was hit (the server sent `limit`), so retrying now won't help. */
   | { kind: 'error'; message: string; limit: boolean }
   | { kind: 'done'; result: AgentResult };
 
@@ -21,7 +22,7 @@ const STAGES: { from: number; label: string }[] = [
   { from: 28, label: 'Gemini is slow right now, still working…' },
 ];
 
-function Progress() {
+export function Progress() {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const started = Date.now();
@@ -38,28 +39,33 @@ function Progress() {
   );
 }
 
+/** POST /api/agent, as the state to show next (never 'thinking'). */
+export async function askAgent(message: string): Promise<AgentState> {
+  try {
+    const res = await fetch('/api/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    const body = await res.json();
+    if (!res.ok) return { kind: 'error', message: body.error ?? `HTTP ${res.status}`, limit: !!body.limit };
+    return { kind: 'done', result: body as AgentResult };
+  } catch {
+    return { kind: 'error', message: 'Network error', limit: false };
+  }
+}
+
 const EXAMPLES = ['A gift under $50 for my brother who likes cricket', 'The best English willow cricket bat', 'A bottle of single malt Scotch whisky for my dad'];
 
 export function AgentChat({ clientId }: { clientId: string | null }) {
   const [message, setMessage] = useState(EXAMPLES[0]);
-  const [state, setState] = useState<State>({ kind: 'idle' });
+  const [state, setState] = useState<AgentState>({ kind: 'idle' });
 
   async function ask(event: React.FormEvent) {
     event.preventDefault();
     if (!message.trim() || state.kind === 'thinking') return;
     setState({ kind: 'thinking' });
-    try {
-      const res = await fetch('/api/agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
-      });
-      const body = await res.json();
-      if (!res.ok) setState({ kind: 'error', message: body.error ?? `HTTP ${res.status}`, limit: !!body.limit });
-      else setState({ kind: 'done', result: body as AgentResult });
-    } catch {
-      setState({ kind: 'error', message: 'Network error', limit: false });
-    }
+    setState(await askAgent(message));
   }
 
   return (
