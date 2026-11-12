@@ -11,8 +11,15 @@ import { RuleResults } from '../checkout-test/rule-results';
 // tend to land in each case (Channel3 picks the real product and price).
 const EXAMPLES = [
   { tag: 'Allowed', tone: 'bg-green-50 text-green-800', prompt: 'A gift under $50 for my brother who likes cricket' },
-  { tag: 'Over spend limit', tone: 'bg-red-50 text-red-800', prompt: 'The best English willow cricket bat' },
-  { tag: 'Blocked category', tone: 'bg-red-50 text-red-800', prompt: 'A bottle of single malt Scotch whisky for my dad' },
+  // Checked against Channel3 and lib/rules.ts on 2026-11-12 (3 searches over ~5 minutes): the bat
+  // came back at $172 every time, and every bat in those results is over $50.
+  { tag: 'Blocked: over $50 limit', tone: 'bg-red-50 text-red-800', prompt: 'The Kookaburra Kahuna Pro 5.0 cricket bat' },
+  // Same check: $31.37, so under the limit; only the gambling category rule blocks it.
+  {
+    tag: 'Blocked: gambling',
+    tone: 'bg-red-50 text-red-800',
+    prompt: 'The Trademark Games 10-inch roulette wheel for a casino night',
+  },
 ];
 
 export function Concierge({ clientId }: { clientId: string | null }) {
