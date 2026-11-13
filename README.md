@@ -156,4 +156,4 @@ Built on PayPal's official AG Grid + PayPal starter, [paypaldev/hackathon-paypal
 
 ## License
 
-[MIT](LICENSE) © 2026 Rakesh and Harshini Chintagada
+[MIT](LICENSE) © 2026 Rakesh Kalluri and Harshini Chintagada
